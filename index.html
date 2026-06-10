@@ -3,129 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>SG PCN Navigator</title>
+    <title>SG PCN Navigator - Custom Route</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; }
+        body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
-        .search-wrapper {
+        
+        /* Navigation Panel */
+        .nav-panel {
             position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
-            background: white; padding: 10px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            background: white; padding: 12px; border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; gap: 8px;
         }
-        .search-group { display: flex; gap: 8px; }
-        input { flex-grow: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
-        button { padding: 12px; background: #2e7d32; color: white; border: none; border-radius: 8px; font-weight: bold; }
-        #results { background: white; max-height: 200px; overflow-y: auto; margin-top: 5px; border-radius: 8px; display: none; }
-        .result-item { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; cursor: pointer; }
-        #status {
-            position: absolute; bottom: 80px; left: 10px; right: 10px; z-index: 1000;
-            background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 8px; font-size: 12px;
+        .input-row { display: flex; align-items: center; gap: 8px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .dot.start { background: #2e7d32; }
+        .dot.end { background: #d32f2f; }
+        
+        input { 
+            flex-grow: 1; padding: 10px; border: 1px solid #ddd; 
+            border-radius: 6px; font-size: 14px; outline: none;
+        }
+        input:focus { border-color: #2e7d32; }
+        
+        .btn-group { display: flex; gap: 5px; }
+        button { 
+            padding: 10px; border: none; border-radius: 6px; 
+            font-weight: bold; cursor: pointer; font-size: 13px;
+        }
+        .btn-primary { background: #2e7d32; color: white; flex-grow: 2; }
+        .btn-gps { background: #e8f5e9; color: #2e7d32; border: 1px solid #2e7d32; }
+        
+        #results {
+            background: white; max-height: 150px; overflow-y: auto;
+            border-radius: 8px; display: none; border: 1px solid #eee;
+        }
+        .result-item { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; }
+        
+        #status-bar {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(0,0,0,0.8); color: white;
+            padding: 8px 16px; border-radius: 20px; font-size: 11px; display: none;
         }
     </style>
 </head>
 <body>
 
-    <div class="search-wrapper">
-        <div class="search-group">
-            <input type="text" id="addressInput" placeholder="Enter destination...">
-            <button onclick="searchAddress()">Search</button>
+    <div class="nav-panel">
+        <div class="input-row">
+            <div class="dot start"></div>
+            <input type="text" id="startInput" placeholder="Starting Point (or click map)">
+            <button class="btn-gps" onclick="useGPS()">GPS</button>
+        </div>
+        <div class="input-row">
+            <div class="dot end"></div>
+            <input type="text" id="endInput" placeholder="Destination (or click map)">
         </div>
         <div id="results"></div>
+        <div class="btn-group">
+            <button class="btn-primary" onclick="calculateRoute()">Get PCN Route</button>
+            <button style="background:#eee;" onclick="clearMap()">Clear</button>
+        </div>
     </div>
 
-    <div id="status">Waiting for GPS lock...</div>
+    <div id="status-bar">Ready</div>
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // YOUR TOKEN
         const ONEMAP_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng";
 
         const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
-        let userLocation = null;
-        let userMarker, routeLayer;
+        
+        let startCoord = null;
+        let endCoord = null;
+        let startMarker, endMarker, routeLayer, gpsMarker;
+        let activeInput = 'end'; // Default click sets destination
 
+        // 1. OneMap Tiles
         L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
-            maxZoom: 19, attribution: 'OneMap'
+            maxZoom: 19, attribution: 'OneMap | SLA'
         }).addTo(map);
 
-        // Load PCN overlay
+        // 2. Load PCN Overlay
         fetch('pcn.json').then(res => res.json()).then(data => {
-            L.geoJSON(data, { style: { color: 'green', weight: 3, opacity: 0.5 } }).addTo(map);
-        }).catch(e => console.log("PCN lines loading..."));
+            L.geoJSON(data, { style: { color: 'green', weight: 3, opacity: 0.4 } }).addTo(map);
+        }).catch(e => console.log("Load PCN data locally..."));
 
-        // GPS Tracking
-        map.locate({setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true});
+        // 3. Location & GPS Logic
+        map.locate({watch: true, enableHighAccuracy: true});
         map.on('locationfound', e => {
-            userLocation = e.latlng;
-            if (!userMarker) {
-                userMarker = L.marker(e.latlng).addTo(map).bindPopup("You");
+            if (!gpsMarker) {
+                gpsMarker = L.circleMarker(e.latlng, {radius: 6, color: '#1a73e8', fillOpacity: 1}).addTo(map).bindPopup("Your GPS Location");
             } else {
-                userMarker.setLatLng(e.latlng);
+                gpsMarker.setLatLng(e.latlng);
             }
-            document.getElementById('status').innerText = "GPS Fixed. Ready to route.";
         });
 
-        async function searchAddress() {
-            const query = document.getElementById('addressInput').value;
+        function useGPS() {
+            if (!gpsMarker) return alert("Searching for GPS signal...");
+            const latlng = gpsMarker.getLatLng();
+            setPoint(latlng.lat, latlng.lng, "My Current Location", 'start');
+        }
+
+        // 4. Map Click Logic
+        map.on('click', e => {
+            // If start is empty, set start. Otherwise, set end.
+            const type = !startCoord ? 'start' : 'end';
+            setPoint(e.latlng.lat, e.latlng.lng, `Point (${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)})`, type);
+        });
+
+        function setPoint(lat, lng, label, type) {
+            const coord = [lat, lng];
+            if (type === 'start') {
+                startCoord = coord;
+                document.getElementById('startInput').value = label;
+                if (startMarker) map.removeLayer(startMarker);
+                startMarker = L.marker(coord, {icon: createIcon('green')}).addTo(map);
+            } else {
+                endCoord = coord;
+                document.getElementById('endInput').value = label;
+                if (endMarker) map.removeLayer(endMarker);
+                endMarker = L.marker(coord, {icon: createIcon('red')}).addTo(map);
+            }
+            if (startCoord && endCoord) calculateRoute();
+        }
+
+        // 5. Routing Engine
+        async function calculateRoute() {
+            if (!startCoord || !endCoord) return showStatus("Please select both Start and Destination", true);
+            
+            showStatus("Finding PCN route...");
+            const url = `https://www.onemap.gov.sg/api/public/routing/route?start=${startCoord[0]},${startCoord[1]}&end=${endCoord[0]},${endCoord[1]}&routeType=cycle`;
+
             try {
-                const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${query}&returnGeom=Y&getAddrDetails=Y`, {
-                    headers: { 'Authorization': ONEMAP_TOKEN }
-                });
+                const res = await fetch(url, { headers: { 'Authorization': ONEMAP_TOKEN } });
                 const data = await res.json();
-                const resultsDiv = document.getElementById('results');
-                resultsDiv.innerHTML = '';
-                resultsDiv.style.display = 'block';
 
-                if (data.results.length === 0) {
-                    resultsDiv.innerHTML = '<div class="result-item">No results found. Check your token.</div>';
-                    return;
-                }
+                if (data.error || !data.route_geometry) throw new Error(data.error || "No route");
 
-                data.results.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'result-item';
-                    div.innerHTML = item.ADDRESS;
-                    div.onclick = () => selectDestination(item.LATITUDE, item.LONGITUDE, item.ADDRESS);
-                    resultsDiv.appendChild(div);
-                });
+                if (routeLayer) map.removeLayer(routeLayer);
+                const points = decodePolyline(data.route_geometry);
+                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6}).addTo(map);
+                map.fitBounds(routeLayer.getBounds(), {padding: [100, 100]});
+                showStatus("Route loaded!");
             } catch (err) {
-                document.getElementById('status').innerText = "Search Error: Likely expired token.";
+                showStatus("Error: No continuous PCN path found here.", true);
             }
         }
 
-        async function selectDestination(lat, lng, name) {
-            document.getElementById('results').style.display = 'none';
-            if (!userLocation) {
-                alert("GPS not fixed yet. Walk to a window or step outside.");
-                return;
-            }
+        // Helper: Icons
+        function createIcon(color) {
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="background-color:${color}; width:12px; height:12px; border:2px solid white; border-radius:50%; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
+                iconSize: [12, 12], iconAnchor: [6, 6]
+            });
+        }
 
-            document.getElementById('status').innerText = "Calculating PCN route...";
+        function showStatus(msg, error = false) {
+            const bar = document.getElementById('status-bar');
+            bar.innerText = msg;
+            bar.style.display = 'block';
+            bar.style.background = error ? 'rgba(211, 47, 47, 0.9)' : 'rgba(0,0,0,0.8)';
+            setTimeout(() => bar.style.display = 'none', 4000);
+        }
 
-            const start = `${userLocation.lat},${userLocation.lng}`;
-            const end = `${lat},${lng}`;
-            const url = `https://www.onemap.gov.sg/api/public/routing/route?start=${start}&end=${end}&routeType=cycle`;
-
-            try {
-                const response = await fetch(url, { headers: { 'Authorization': ONEMAP_TOKEN } });
-                const routeData = await response.json();
-
-                // Detailed Error Checking
-                if (routeData.error || !routeData.route_geometry) {
-                    document.getElementById('status').innerText = "Error: " + (routeData.error || "No cycling path found between these points.");
-                    return;
-                }
-
-                if (routeLayer) map.removeLayer(routeLayer);
-                const points = decodePolyline(routeData.route_geometry);
-                routeLayer = L.polyline(points, {color: 'blue', weight: 6}).addTo(map);
-                map.fitBounds(routeLayer.getBounds());
-                document.getElementById('status').innerText = "Route found to " + name;
-            } catch (err) {
-                document.getElementById('status').innerText = "Connection error or expired OneMap token.";
-            }
+        function clearMap() {
+            if (startMarker) map.removeLayer(startMarker);
+            if (endMarker) map.removeLayer(endMarker);
+            if (routeLayer) map.removeLayer(routeLayer);
+            startCoord = endCoord = null;
+            document.getElementById('startInput').value = '';
+            document.getElementById('endInput').value = '';
         }
 
         function decodePolyline(str) {
