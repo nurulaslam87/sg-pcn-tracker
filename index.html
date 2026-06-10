@@ -1,135 +1,172 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>SG PCN Navigator</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>SG PCN Navigator</title>
+    
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; }
-        #map { height: 100vh; width: 100vw; }
-        
-        /* Search UI */
-        .search-container {
-            position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
-            background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        }
-        input { width: 70%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 10px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        
-        #results {
-            background: white; max-height: 200px; overflow-y: auto; 
-            border-radius: 0 0 8px 8px; display: none;
-        }
-        .result-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; }
-        .result-item:hover { background: #f0f0f0; }
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
 
-        #status-bar {
-            position: absolute; bottom: 20px; left: 10px; right: 10px; z-index: 1000;
-            background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px;
-            font-size: 12px; text-align: center; display: none;
+        /* Search Box Styling */
+        .search-wrapper {
+            position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .search-group { display: flex; gap: 8px; }
+        input { 
+            flex-grow: 1; padding: 12px; border: 1px solid #ddd; 
+            border-radius: 8px; font-size: 16px; outline: none;
+        }
+        button { 
+            padding: 12px 18px; background: #2e7d32; color: white; 
+            border: none; border-radius: 8px; font-weight: bold; cursor: pointer; 
+        }
+
+        /* Results List */
+        #results {
+            background: white; max-height: 250px; overflow-y: auto;
+            margin-top: 5px; border-radius: 8px; display: none;
+        }
+        .result-item { 
+            padding: 12px; border-bottom: 1px solid #eee; 
+            font-size: 14px; cursor: pointer; 
+        }
+        .result-item:last-child { border-bottom: none; }
+
+        /* Status Bar */
+        #status {
+            position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; background: rgba(0, 0, 0, 0.7); color: white;
+            padding: 8px 16px; border-radius: 20px; font-size: 12px;
+            white-space: nowrap; pointer-events: none; display: none;
         }
     </style>
 </head>
 <body>
 
-    <div class="search-container">
-        <input type="text" id="addressInput" placeholder="Search destination (e.g. Punggol Waterway)">
-        <button onclick="searchAddress()">Search</button>
+    <div class="search-wrapper">
+        <div class="search-group">
+            <input type="text" id="addressInput" placeholder="Where to cycle? (e.g. Pasir Ris)">
+            <button onclick="searchAddress()">Search</button>
+        </div>
         <div id="results"></div>
     </div>
 
-    <div id="status-bar">Calculating PCN Route...</div>
+    <div id="status">Updating GPS...</div>
     <div id="map"></div>
 
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <script>
-        const map = L.map('map').setView([1.3521, 103.8198], 12);
+        // API CONFIGURATION
+        const ONEMAP_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng";
+
+        const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
         let userLocation = null;
-        let routeLayer = null;
-const myToken eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdngE";
-        // 1. OneMap Base Tiles
+        let userMarker, accuracyCircle, routeLayer;
+
+        // 1. OneMap High-Quality Base Map
         L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
-            detectRetina: true, maxZoom: 19, attribution: 'OneMap | SLA'
+            detectRetina: true,
+            maxZoom: 19,
+            attribution: 'OneMap | SLA | NParks'
         }).addTo(map);
 
-        // 2. Load PCN Overlay (Visual Guide)
+        // 2. Load the PCN GeoJSON Overlay (The green lines)
         fetch('pcn.json')
             .then(res => res.json())
             .then(data => {
-                L.geoJSON(data, { style: { color: '#2e7d32', weight: 6, opacity: 0.5 } }).addTo(map);
-            });
+                L.geoJSON(data, {
+                    style: { color: '#2e7d32', weight: 5, opacity: 0.6 }
+                }).addTo(map);
+            }).catch(e => console.log("PCN data not found yet."));
 
-        // 3. Track User Location
-        map.locate({setView: true, watch: true, enableHighAccuracy: true});
-        map.on('locationfound', e => {
+        // 3. Live GPS Tracking
+        map.locate({setView: true, maxZoom: 15, watch: true, enableHighAccuracy: true});
+
+        map.on('locationfound', (e) => {
             userLocation = e.latlng;
-            if (!window.userMarker) {
-                window.userMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
+            const radius = e.accuracy / 2;
+            document.getElementById('status').style.display = 'block';
+            document.getElementById('status').innerText = "GPS Active - Signal: " + Math.round(e.accuracy) + "m";
+
+            if (!userMarker) {
+                userMarker = L.marker(e.latlng).addTo(map).bindPopup("You are here");
+                accuracyCircle = L.circle(e.latlng, radius).addTo(map);
             } else {
-                window.userMarker.setLatLng(e.latlng);
+                userMarker.setLatLng(e.latlng);
+                accuracyCircle.setLatLng(e.latlng).setRadius(radius);
             }
         });
 
-        // 4. Search Function
+        // 4. Address Search Function
         async function searchAddress() {
             const query = document.getElementById('addressInput').value;
-          const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${query}&returnGeom=Y&getAddrDetails=Y`, {
-    headers: { 'Authorization': eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng } // <--- Add this
-});ls=Y`);
+            if (!query) return;
+
+            const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${query}&returnGeom=Y&getAddrDetails=Y`, {
+                headers: { 'Authorization': ONEMAP_TOKEN }
+            });
             const data = await res.json();
             
             const resultsDiv = document.getElementById('results');
             resultsDiv.innerHTML = '';
             resultsDiv.style.display = 'block';
 
+            if (data.results.length === 0) {
+                resultsDiv.innerHTML = '<div class="result-item">No results found</div>';
+                return;
+            }
+
             data.results.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'result-item';
-                div.innerHTML = item.ADDRESS;
-                div.onclick = () => selectDestination(item.LATITUDE, item.LONGITUDE, item.ADDRESS);
+                div.innerHTML = `<strong>${item.SEARCHVAL}</strong><br><small>${item.ADDRESS}</small>`;
+                div.onclick = () => selectDestination(item.LATITUDE, item.LONGITUDE, item.SEARCHVAL);
                 resultsDiv.appendChild(div);
             });
         }
 
-        // 5. Route Calculation (Using OneMap Cycling API)
-        async function selectDestination(lat, lng, address) {
+        // 5. Route Calculation (Priority: PCN/Cycling Paths)
+        async function selectDestination(lat, lng, name) {
             document.getElementById('results').style.display = 'none';
-            document.getElementById('status-bar').style.display = 'block';
-            
+            document.getElementById('addressInput').value = name;
+
             if (!userLocation) {
-                alert("Wait for GPS to find your location first.");
+                alert("Please wait for GPS to find your starting point.");
                 return;
             }
 
             const start = `${userLocation.lat},${userLocation.lng}`;
             const end = `${lat},${lng}`;
-            
-            // Using OneMap's Cycle routing which prioritizes PCNs
             const url = `https://www.onemap.gov.sg/api/public/routing/route?start=${start}&end=${end}&routeType=cycle`;
 
             try {
-                // IMPORTANT: In a real app, you need to pass a Token in the headers
-                // For this demo, we assume the public endpoint or a token you've added
-             const response = await fetch(url, {
-    headers: { 'Authorization': eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng } // <--- Add this
-});l);
+                const response = await fetch(url, {
+                    headers: { 'Authorization': ONEMAP_TOKEN }
+                });
                 const routeData = await response.json();
 
                 if (routeLayer) map.removeLayer(routeLayer);
                 
-                // Decode and Draw Route
                 const points = decodePolyline(routeData.route_geometry);
-                routeLayer = L.polyline(points, {color: '#0000FF', weight: 5}).addTo(map);
-                map.fitBounds(routeLayer.getBounds());
-                
-                document.getElementById('status-bar').innerText = `Routing to: ${address}`;
+                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6, opacity: 0.9}).addTo(map);
+                map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+
+                document.getElementById('status').innerText = "Navigating to " + name;
             } catch (err) {
-                alert("Routing failed. Ensure you are near a PCN/road.");
-                console.error(err);
+                alert("Routing failed. Ensure both points are in Singapore.");
             }
         }
 
-        // Helper to decode OneMap geometry
+        // Helper: OneMap Geometry Decoder
         function decodePolyline(str) {
             let index = 0, lat = 0, lng = 0, coordinates = [], shift = 0, result = 0, byte = null;
             while (index < str.length) {
