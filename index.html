@@ -3,161 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>SG PCN & Road Navigator</title>
+    <title>SG Live PCN Navigator</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #f0f2f5; }
-        #map { height: 100vh; width: 100vw; z-index: 1; }
+        body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; }
         
-        .ui-container {
-            position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
+        /* Navigation Guidance Overlay */
+        #nav-guide {
+            position: absolute; top: 10px; left: 10px; right: 10px; z-index: 2000;
             background: white; padding: 15px; border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: none;
+            align-items: center; gap: 15px;
         }
+        #nav-arrow { font-size: 40px; color: #2e7d32; font-weight: bold; }
+        #nav-text { flex-grow: 1; font-weight: 600; font-size: 16px; }
 
-        .input-box { display: flex; align-items: center; gap: 8px; position: relative; }
-        .input-box input { 
-            flex-grow: 1; padding: 12px; border: 1px solid #ddd; 
-            border-radius: 8px; font-size: 14px; outline: none;
+        .search-area {
+            position: absolute; bottom: 30px; left: 10px; right: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 12px; display: flex; gap: 5px;
         }
-        .btn-small { padding: 8px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
-        .btn-gps { background: #e3f2fd; color: #1976d2; border: 1px solid #bbdefb; }
-        .btn-search { background: #2e7d32; color: white; }
-
-        .indicator { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-        .start-indicator { background: #4caf50; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.3); }
-        .end-indicator { background: #f44336; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.3); }
-
-        #results {
-            background: white; max-height: 200px; overflow-y: auto; border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: none;
-        }
-        .result-item { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; }
+        input { flex-grow: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; }
+        button { padding: 12px; background: #2e7d32; color: white; border: none; border-radius: 8px; font-weight: bold; }
         
-        #status {
-            position: absolute; bottom: 30px; left: 10px; right: 10px;
-            z-index: 1000; background: rgba(0,0,0,0.85); color: white;
-            padding: 10px; border-radius: 12px; font-size: 12px; text-align: center;
-        }
+        /* Directional Marker */
+        .user-icon { font-size: 24px; transition: transform 0.2s; }
     </style>
 </head>
 <body>
 
-    <div class="ui-container">
-        <div class="input-box">
-            <div class="indicator start-indicator"></div>
-            <input type="text" id="startInput" placeholder="Start: Search or Drag Green Pin">
-            <button class="btn-small btn-gps" onclick="setPointToGPS('start')">GPS</button>
-            <button class="btn-small btn-search" onclick="searchLoc('start')">Search</button>
-        </div>
-        <div class="input-box">
-            <div class="indicator end-indicator"></div>
-            <input type="text" id="endInput" placeholder="End: Search or Drag Red Pin">
-            <button class="btn-small btn-gps" onclick="setPointToGPS('end')">GPS</button>
-            <button class="btn-small btn-search" onclick="searchLoc('end')">Search</button>
-        </div>
-        <div id="results"></div>
+    <div id="nav-guide">
+        <div id="nav-arrow">↑</div>
+        <div id="nav-text">Head towards the PCN to start...</div>
     </div>
 
-    <div id="status">Drag pins onto a Road or PCN line to start</div>
     <div id="map"></div>
+
+    <div class="search-area">
+        <input type="text" id="dest" placeholder="Enter Destination...">
+        <button onclick="startNav()">Navigate</button>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // TOKEN FROM YOUR PREVIOUS MESSAGE
         const ONEMAP_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng";
 
-        const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
-        let startMarker, endMarker, routeLayer, gpsLocation = null;
+        const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 13);
+        let userPos = null;
+        let userMarker, routeLayer, navSteps = [];
+        let currentStepIndex = 0;
 
-        L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
-            maxZoom: 19, attribution: 'OneMap | SLA'
-        }).addTo(map);
+        L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png').addTo(map);
 
+        // Load PCN overlay
         fetch('pcn.json').then(res => res.json()).then(data => {
-            L.geoJSON(data, { style: { color: '#2e7d32', weight: 4, opacity: 0.5 } }).addTo(map);
-        }).catch(() => console.log("Overlaying PCN lines..."));
+            L.geoJSON(data, { style: { color: 'green', weight: 3, opacity: 0.3 } }).addTo(map);
+        });
 
-        startMarker = createDraggableMarker([1.350, 103.820], '#4caf50', 'start').addTo(map);
-        endMarker = createDraggableMarker([1.360, 103.830], '#f44336', 'end').addTo(map);
-
+        // Initialize GPS
         map.locate({watch: true, enableHighAccuracy: true});
-        map.on('locationfound', e => { gpsLocation = e.latlng; });
+        map.on('locationfound', (e) => {
+            userPos = e.latlng;
+            updateUserMarker(e);
+            checkNavigation(e.latlng);
+        });
 
-        function createDraggableMarker(latlng, color, type) {
-            const marker = L.marker(latlng, {
-                draggable: true,
-                icon: L.divIcon({
-                    className: 'custom-pin',
-                    html: `<div style="background:${color}; width:18px; height:18px; border:3px solid white; border-radius:50%; box-shadow:0 0 10px rgba(0,0,0,0.5);"></div>`,
-                    iconSize: [24, 24], iconAnchor: [12, 12]
-                })
-            });
-            marker.on('dragend', function() { calculateRoute(); });
-            return marker;
-        }
-
-        function setPointToGPS(type) {
-            if (!gpsLocation) return alert("Waiting for GPS signal...");
-            const marker = type === 'start' ? startMarker : endMarker;
-            marker.setLatLng(gpsLocation);
-            map.panTo(gpsLocation);
-            calculateRoute();
-        }
-
-        async function searchLoc(type) {
-            const val = document.getElementById(type + 'Input').value;
-            const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${val}&returnGeom=Y&getAddrDetails=Y`, {
-                headers: { 'Authorization': ONEMAP_TOKEN }
-            });
-            const data = await res.json();
-            const resultsDiv = document.getElementById('results');
-            resultsDiv.innerHTML = '';
-            resultsDiv.style.display = 'block';
-
-            data.results.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'result-item';
-                div.innerHTML = item.ADDRESS;
-                div.onclick = () => {
-                    const latlng = [item.LATITUDE, item.LONGITUDE];
-                    const marker = type === 'start' ? startMarker : endMarker;
-                    marker.setLatLng(latlng);
-                    document.getElementById(type + 'Input').value = item.ADDRESS;
-                    resultsDiv.style.display = 'none';
-                    map.panTo(latlng);
-                    calculateRoute();
-                };
-                resultsDiv.appendChild(div);
-            });
-        }
-
-        async function calculateRoute() {
-            const s = startMarker.getLatLng();
-            const e = endMarker.getLatLng();
-            
-            // CORRECTED ENDPOINT: routingsvc/route
-            const url = `https://www.onemap.gov.sg/api/public/routingsvc/route?start=${s.lat},${s.lng}&end=${e.lat},${e.lng}&routeType=cycle`;
-
-            document.getElementById('status').innerText = "Planning route (using Road + PCN)...";
-
-            try {
-                const response = await fetch(url, { headers: { 'Authorization': ONEMAP_TOKEN } });
-                const data = await response.json();
-
-                if (data.error || !data.route_geometry) {
-                    throw new Error(data.error || "Route not found. Drag pins closer to a road/path.");
-                }
-
-                if (routeLayer) map.removeLayer(routeLayer);
-                const points = decodePolyline(data.route_geometry);
-                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6, opacity: 0.85}).addTo(map);
-                map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
-                document.getElementById('status').innerText = "Route plotted! Following PCN where possible.";
-            } catch (err) {
-                document.getElementById('status').innerText = "Fail: " + err.message;
+        function updateUserMarker(e) {
+            if (!userMarker) {
+                const icon = L.divIcon({ className: 'user-icon', html: '🚲', iconSize: [30, 30] });
+                userMarker = L.marker(e.latlng, { icon }).addTo(map);
+            } else {
+                userMarker.setLatLng(e.latlng);
             }
+            map.panTo(e.latlng); // Active tracking: Keep map on user
+        }
+
+        async function startNav() {
+            const query = document.getElementById('dest').value;
+            // 1. Get Destination Coords
+            const searchRes = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${query}&returnGeom=Y&getAddrDetails=N`);
+            const searchData = await searchRes.json();
+            if (!searchData.results.length) return alert("Destination not found");
+            const dest = searchData.results[0];
+
+            // 2. Get Route with Instructions
+            const url = `https://www.onemap.gov.sg/api/public/routingsvc/route?start=${userPos.lat},${userPos.lng}&end=${dest.LATITUDE},${dest.LONGITUDE}&routeType=cycle`;
+            const routeRes = await fetch(url, { headers: { 'Authorization': ONEMAP_TOKEN } });
+            const routeData = await routeRes.json();
+
+            // 3. Setup Navigation
+            if (routeLayer) map.removeLayer(routeLayer);
+            const points = decodePolyline(routeData.route_geometry);
+            routeLayer = L.polyline(points, { color: 'blue', weight: 6 }).addTo(map);
+            
+            navSteps = routeData.route_instructions || []; // Note: OneMap sometimes includes text instructions
+            currentStepIndex = 0;
+            document.getElementById('nav-guide').style.display = 'flex';
+            speak("Navigation started. Follow the blue line.");
+        }
+
+        function checkNavigation(currentPos) {
+            if (!routeLayer || navSteps.length === 0) return;
+
+            // Simple proximity check for next maneuver
+            // In a production app, you would use a 'cross-track error' calculation
+            // Here, we check the distance to the next point in the geometry
+            const points = routeLayer.getLatLngs();
+            const nextPoint = points[currentStepIndex + 5]; // Check a few points ahead
+
+            if (nextPoint) {
+                const dist = currentPos.distanceTo(nextPoint);
+                if (dist < 30) {
+                    currentStepIndex += 5; // Move progress forward
+                    updateNavUI("Continue straight on PCN", "↑");
+                }
+            }
+        }
+
+        function updateNavUI(text, arrow) {
+            document.getElementById('nav-text').innerText = text;
+            document.getElementById('nav-arrow').innerText = arrow;
+            speak(text);
+        }
+
+        function speak(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
         }
 
         function decodePolyline(str) {
