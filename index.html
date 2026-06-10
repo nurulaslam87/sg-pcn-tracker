@@ -12,8 +12,7 @@
         .ui-container {
             position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
             background: white; padding: 15px; border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            display: flex; flex-direction: column; gap: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 10px;
         }
 
         .input-box { display: flex; align-items: center; gap: 8px; position: relative; }
@@ -30,16 +29,15 @@
         .end-indicator { background: #f44336; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.3); }
 
         #results {
-            position: absolute; top: 100%; left: 0; right: 0; background: white;
-            max-height: 200px; overflow-y: auto; border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: none; z-index: 1001;
+            background: white; max-height: 200px; overflow-y: auto; border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: none;
         }
         .result-item { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; cursor: pointer; }
         
         #status {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            position: absolute; bottom: 30px; left: 10px; right: 10px;
             z-index: 1000; background: rgba(0,0,0,0.85); color: white;
-            padding: 10px 20px; border-radius: 25px; font-size: 12px; text-align: center;
+            padding: 10px; border-radius: 12px; font-size: 12px; text-align: center;
         }
     </style>
 </head>
@@ -48,45 +46,42 @@
     <div class="ui-container">
         <div class="input-box">
             <div class="indicator start-indicator"></div>
-            <input type="text" id="startInput" placeholder="Start: Search, drag pin, or use GPS">
+            <input type="text" id="startInput" placeholder="Start: Search or Drag Green Pin">
             <button class="btn-small btn-gps" onclick="setPointToGPS('start')">GPS</button>
-            <button class="btn-small btn-search" onclick="searchLoc('start')">Go</button>
+            <button class="btn-small btn-search" onclick="searchLoc('start')">Search</button>
         </div>
         <div class="input-box">
             <div class="indicator end-indicator"></div>
-            <input type="text" id="endInput" placeholder="End: Search or drag pin">
+            <input type="text" id="endInput" placeholder="End: Search or Drag Red Pin">
             <button class="btn-small btn-gps" onclick="setPointToGPS('end')">GPS</button>
-            <button class="btn-small btn-search" onclick="searchLoc('end')">Go</button>
+            <button class="btn-small btn-search" onclick="searchLoc('end')">Search</button>
         </div>
         <div id="results"></div>
     </div>
 
-    <div id="status">Drag pins to plan your route</div>
+    <div id="status">Drag pins onto a Road or PCN line to start</div>
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
+        // TOKEN FROM YOUR PREVIOUS MESSAGE
         const ONEMAP_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxNjAyMSwiZm9yZXZlciI6ZmFsc2UsImlzcyI6Ik9uZU1hcCIsImlhdCI6MTc4MTA1MTIwOSwibmJmIjoxNzgxMDUxMjA5LCJleHAiOjE3ODEzMTA0MDksImp0aSI6IjczYTIyMWI5LTIzOTQtNDZmMC05ZTZlLTJlODdkYWYxMjYxMSJ9.HJ2e-AlroVaW3uEOoZmfHSikY5vPx2GxKNqhR78Z80-N58q8gFnboCynq3G4CP9sWZSfwsJYRWD9kYdu1huJKQpoxhJd5kdxBVXOsEhvXGKvMIges333QSYAibHJ3JD1VEV1OcWpQBWgaJtAtgEQcLziPIl9EXwzpR5GWMXhTQxpQSyJP_w6UC-Mlvu_p_HpSymwBZcVrYzKP5hl1ZdHIlimz2X_clkqWRbKjtdNsFAsAJIQ-RER9mMOIJZsSa-BtA1NEZdOP0Iay-1P7qJhqJbTAljTWSTckf_qbSKArhKdWH68fwU97Dd_AQ7FPz3ChdfoXwR7W3xr7XlVCeAdng";
 
         const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
         let startMarker, endMarker, routeLayer, gpsLocation = null;
 
-        // OneMap Base Layer
         L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
             maxZoom: 19, attribution: 'OneMap | SLA'
         }).addTo(map);
 
-        // PCN Overlay (Green)
         fetch('pcn.json').then(res => res.json()).then(data => {
             L.geoJSON(data, { style: { color: '#2e7d32', weight: 4, opacity: 0.5 } }).addTo(map);
         }).catch(() => console.log("Overlaying PCN lines..."));
 
-        // Initialize Draggable Pins
         startMarker = createDraggableMarker([1.350, 103.820], '#4caf50', 'start').addTo(map);
         endMarker = createDraggableMarker([1.360, 103.830], '#f44336', 'end').addTo(map);
 
-        // Track user GPS
         map.locate({watch: true, enableHighAccuracy: true});
         map.on('locationfound', e => { gpsLocation = e.latlng; });
 
@@ -95,30 +90,18 @@
                 draggable: true,
                 icon: L.divIcon({
                     className: 'custom-pin',
-                    html: `<div style="background:${color}; width:16px; height:16px; border:3px solid white; border-radius:50%; box-shadow:0 0 8px rgba(0,0,0,0.4);"></div>`,
-                    iconSize: [22, 22], iconAnchor: [11, 11]
+                    html: `<div style="background:${color}; width:18px; height:18px; border:3px solid white; border-radius:50%; box-shadow:0 0 10px rgba(0,0,0,0.5);"></div>`,
+                    iconSize: [24, 24], iconAnchor: [12, 12]
                 })
             });
-
-            marker.on('dragend', function() {
-                updateInputFromPin(type, marker.getLatLng());
-                calculateRoute();
-            });
+            marker.on('dragend', function() { calculateRoute(); });
             return marker;
         }
 
-        async function updateInputFromPin(type, latlng) {
-            const res = await fetch(`https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${latlng.lat},${latlng.lng}&returnGeom=Y&getAddrDetails=Y`);
-            const data = await res.json();
-            const addr = data.results && data.results[0] ? data.results[0].ADDRESS : `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
-            document.getElementById(type + 'Input').value = addr;
-        }
-
         function setPointToGPS(type) {
-            if (!gpsLocation) return alert("GPS not found. Please enable location services.");
+            if (!gpsLocation) return alert("Waiting for GPS signal...");
             const marker = type === 'start' ? startMarker : endMarker;
             marker.setLatLng(gpsLocation);
-            updateInputFromPin(type, gpsLocation);
             map.panTo(gpsLocation);
             calculateRoute();
         }
@@ -153,25 +136,27 @@
         async function calculateRoute() {
             const s = startMarker.getLatLng();
             const e = endMarker.getLatLng();
-            const url = `https://www.onemap.gov.sg/api/public/routing/route?start=${s.lat},${s.lng}&end=${e.lat},${e.lng}&routeType=cycle`;
+            
+            // CORRECTED ENDPOINT: routingsvc/route
+            const url = `https://www.onemap.gov.sg/api/public/routingsvc/route?start=${s.lat},${s.lng}&end=${e.lat},${e.lng}&routeType=cycle`;
 
-            document.getElementById('status').innerText = "Planning route (prioritizing PCN)...";
+            document.getElementById('status').innerText = "Planning route (using Road + PCN)...";
 
             try {
                 const response = await fetch(url, { headers: { 'Authorization': ONEMAP_TOKEN } });
                 const data = await response.json();
 
                 if (data.error || !data.route_geometry) {
-                    throw new Error("No cycle path. Try moving pins closer to a road/PCN.");
+                    throw new Error(data.error || "Route not found. Drag pins closer to a road/path.");
                 }
 
                 if (routeLayer) map.removeLayer(routeLayer);
                 const points = decodePolyline(data.route_geometry);
-                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6, opacity: 0.8}).addTo(map);
+                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6, opacity: 0.85}).addTo(map);
                 map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
-                document.getElementById('status').innerText = "Route ready! Green lines are PCN.";
+                document.getElementById('status').innerText = "Route plotted! Following PCN where possible.";
             } catch (err) {
-                document.getElementById('status').innerText = err.message;
+                document.getElementById('status').innerText = "Fail: " + err.message;
             }
         }
 
