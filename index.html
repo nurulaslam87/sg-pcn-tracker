@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SG PCN Navigator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100vw; }
+        #controls {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        button { 
+            padding: 10px; background: #2e7d32; color: white; 
+            border: none; border-radius: 3px; font-weight: bold; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <button onclick="locateUser()">📍 Find My Location</button>
+    </div>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. Initialize Map (Singapore Coordinates)
+        const map = L.map('map').setView([1.3521, 103.8198], 12);
+
+        // 2. Add OneMap Singapore Tiles
+        L.tileLayer('https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png', {
+            detectRetina: true,
+            maxZoom: 19,
+            attribution: 'OneMap | SLA | NParks'
+        }).addTo(map);
+
+        // 3. Load the PCN Data you uploaded
+        fetch('pcn.json')
+            .then(response => response.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    style: { color: '#007b31', weight: 4, opacity: 0.8 },
+                    onEachFeature: function(feature, layer) {
+                        layer.bindPopup("PCN Route");
+                    }
+                }).addTo(map);
+            });
+
+        // 4. GPS Tracking Logic
+        let userMarker, accuracyCircle;
+
+        function locateUser() {
+            map.locate({setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true});
+        }
+
+        function onLocationFound(e) {
+            const radius = e.accuracy / 2;
+
+            if (!userMarker) {
+                userMarker = L.marker(e.latlng).addTo(map);
+                accuracyCircle = L.circle(e.latlng, radius).addTo(map);
+            } else {
+                userMarker.setLatLng(e.latlng);
+                accuracyCircle.setLatLng(e.latlng).setRadius(radius);
+            }
+        }
+
+        map.on('locationfound', onLocationFound);
+        map.on('locationerror', (e) => alert("GPS Error: " + e.message));
+
+    </script>
+</body>
+</html>
