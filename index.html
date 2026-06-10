@@ -13,40 +13,47 @@
         .ui-panel {
             position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;
             background: white; padding: 15px; border-radius: 16px;
-            box-shadow: 0 4px 25px rgba(0,0,0,0.2); max-height: 50vh; overflow-y: auto;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.2); max-height: 45vh; overflow-y: auto;
         }
 
-        .stop-row { 
-            background: #f8f9fa; margin-bottom: 10px; padding: 10px; 
-            border-radius: 10px; border-left: 5px solid #2e7d32;
-        }
+        .stop-row { background: #f8f9fa; margin-bottom: 10px; padding: 10px; border-radius: 10px; border-left: 5px solid #2e7d32; }
         .stop-row.end { border-left-color: #d32f2f; }
-        
         .input-group { display: flex; gap: 5px; margin-bottom: 8px; }
         input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
-        
         .btn-sm { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; }
         .btn-gps { background: #e3f2fd; color: #1976d2; }
-        .btn-search { background: #2e7d32; color: white; }
-        .btn-remove { background: #ffebee; color: #c62828; }
         
-        .stats-label { font-size: 11px; color: #666; font-weight: bold; margin-top: 5px; }
+        /* Alternatives Selection */
+        #alt-routes { display: flex; gap: 8px; margin: 10px 0; overflow-x: auto; padding-bottom: 5px; }
+        .alt-card { 
+            min-width: 120px; padding: 10px; background: #eee; border-radius: 8px; 
+            font-size: 11px; cursor: pointer; border: 2px solid transparent;
+        }
+        .alt-card.active { border-color: #1a73e8; background: #e8f0fe; }
+
+        /* Navigation Overlay */
+        #nav-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000;
+            background: white; display: none; flex-direction: column;
+        }
+        .nav-header { background: #2e7d32; color: white; padding: 20px; display: flex; align-items: center; gap: 20px; }
+        #nav-arrow { font-size: 50px; font-weight: bold; }
+        #nav-instr { font-size: 18px; font-weight: bold; }
+        #nav-map { flex-grow: 1; position: relative; }
 
         .main-controls { display: flex; gap: 10px; margin-top: 10px; }
         .btn-lg { flex-grow: 1; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
         .btn-add { background: #f0f4f0; color: #2e7d32; border: 1px solid #2e7d32; }
         .btn-nav { background: #1a73e8; color: white; }
 
-        /* Floating Recenter */
         .recenter-btn {
             position: absolute; bottom: 30px; right: 20px; z-index: 1000;
             background: white; width: 55px; height: 55px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: none; font-size: 24px;
         }
-
         #search-results {
-            position: fixed; top: 60px; left: 20px; right: 20px; z-index: 2000;
+            position: fixed; top: 60px; left: 20px; right: 20px; z-index: 3000;
             background: white; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             display: none; max-height: 300px; overflow-y: auto;
         }
@@ -57,167 +64,176 @@
 
     <div id="search-results"></div>
 
-    <div class="ui-panel" id="ui">
-        <div id="stop-list">
-            <!-- Stops will be injected here -->
+    <!-- Live Nav UI -->
+    <div id="nav-overlay">
+        <div class="nav-header">
+            <div id="nav-arrow">↑</div>
+            <div id="nav-instr">Head towards the route...</div>
+            <button onclick="stopNavigation()" style="margin-left:auto; background:rgba(255,255,255,0.2); border:none; color:white; padding:10px; border-radius:5px;">Exit</button>
         </div>
-        
+        <div id="nav-map-container" style="height:100%"></div>
+    </div>
+
+    <!-- Planning UI -->
+    <div class="ui-panel" id="ui">
+        <div id="stop-list"></div>
+        <div id="alt-routes"></div>
         <div class="main-controls">
-            <button class="btn-lg btn-add" onclick="addStopUI()">+ Add Destination</button>
-            <button class="btn-lg btn-nav" onclick="startNavigation()">START NAV</button>
+            <button class="btn-lg btn-add" onclick="addStopUI()">+ Add Stop</button>
+            <button id="start-nav-btn" class="btn-lg btn-nav" style="display:none;" onclick="startNavigation()">NAVIGATE</button>
         </div>
     </div>
 
     <button class="recenter-btn" onclick="recenterMap()">🎯</button>
-
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
         const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
-        let stops = []; // Array of objects: { marker, inputEl, statsEl }
-        let routeLayer, gpsPos = null;
-        let isNavigating = false;
+        let stops = [], routeOptions = [], selectedRouteIndex = 0;
+        let routeLayers = [], gpsPos = null, isNavigating = false;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // Load PCN Layer
         fetch('pcn.json').then(res => res.json()).then(data => {
             L.geoJSON(data, { style: { color: 'green', weight: 4, opacity: 0.3 }, interactive: false }).addTo(map);
         });
 
-        // GPS Tracking
         map.locate({watch: true, enableHighAccuracy: true});
         map.on('locationfound', e => {
             gpsPos = e.latlng;
-            if (isNavigating) map.panTo(e.latlng);
+            if (isNavigating) {
+                map.panTo(e.latlng);
+                updateNavLogic(e.latlng);
+            }
         });
 
-        // Initialize with Start and One Destination
         addStopUI('Start', [1.3521, 103.8198], 'green');
         addStopUI('Destination', [1.3621, 103.8298], 'red');
 
-        function addStopUI(label = 'Destination', latlng = null, color = 'red') {
+        function addStopUI(label = 'Stop', latlng = null, color = 'red') {
             const index = stops.length;
-            const stopId = `stop-${index}`;
-            
-            // Default position if null (offset from last stop)
             if (!latlng) {
                 const lastPos = stops[index-1].marker.getLatLng();
                 latlng = [lastPos.lat + 0.005, lastPos.lng + 0.005];
             }
-
-            // Create Marker
             const marker = L.marker(latlng, {
                 draggable: true,
                 icon: L.divIcon({
-                    html: `<div style="background:${color}; width:18px; height:18px; border:3px solid white; border-radius:50%; box-shadow:0 0 10px rgba(0,0,0,0.3);"></div>`,
+                    html: `<div style="background:${color}; width:18px; height:18px; border:3px solid white; border-radius:50%;"></div>`,
                     iconSize: [24, 24], iconAnchor: [12, 12]
                 })
             }).addTo(map);
 
-            marker.on('dragend', () => {
-                updateAddressFromCoords(index);
-                calculateRoute();
-            });
+            marker.on('dragend', () => { calculateRoute(); });
 
-            // Create UI Row
             const row = document.createElement('div');
             row.className = `stop-row ${color === 'red' ? 'end' : ''}`;
-            row.id = stopId;
             row.innerHTML = `
-                <div style="font-size:12px; font-weight:bold; margin-bottom:5px;">${index === 0 ? 'STARTING POINT' : 'STOP ' + index}</div>
                 <div class="input-group">
                     <input type="text" id="input-${index}" placeholder="Search or drag pin...">
                     <button class="btn-sm btn-gps" onclick="setStopToGPS(${index})">GPS</button>
-                    <button class="btn-sm btn-search" onclick="searchAddress(${index})">🔍</button>
+                    <button class="btn-sm btn-gps" style="background:#2e7d32; color:white;" onclick="searchAddress(${index})">🔍</button>
                 </div>
-                <div id="stats-${index}" class="stats-label"></div>
             `;
-            
             document.getElementById('stop-list').appendChild(row);
-            
-            stops.push({ marker, id: stopId });
-            updateAddressFromCoords(index);
+            stops.push({ marker });
             calculateRoute();
-        }
-
-        async function updateAddressFromCoords(index) {
-            const pos = stops[index].marker.getLatLng();
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.lat}&lon=${pos.lng}`);
-            const data = await res.json();
-            document.getElementById(`input-${index}`).value = data.display_name.split(',')[0] + ', ' + data.display_name.split(',')[1];
-        }
-
-        function setStopToGPS(index) {
-            if (!gpsPos) return alert("Waiting for GPS signal...");
-            stops[index].marker.setLatLng(gpsPos);
-            map.panTo(gpsPos);
-            updateAddressFromCoords(index);
-            calculateRoute();
-        }
-
-        async function searchAddress(index) {
-            const query = document.getElementById(`input-${index}`).value;
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}+singapore`);
-            const data = await res.json();
-            
-            const resultsDiv = document.getElementById('search-results');
-            resultsDiv.innerHTML = '';
-            resultsDiv.style.display = 'block';
-
-            data.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'res-item';
-                div.innerText = item.display_name;
-                div.onclick = () => {
-                    const latlng = [item.lat, item.lon];
-                    stops[index].marker.setLatLng(latlng);
-                    document.getElementById(`input-${index}`).value = item.display_name;
-                    resultsDiv.style.display = 'none';
-                    map.setView(latlng, 15);
-                    calculateRoute();
-                };
-                resultsDiv.appendChild(div);
-            });
         }
 
         async function calculateRoute() {
             if (stops.length < 2) return;
             const coords = stops.map(s => `${s.marker.getLatLng().lng},${s.marker.getLatLng().lat}`).join(';');
-            const url = `https://router.project-osrm.org/route/v1/bicycle/${coords}?overview=full&geometries=polyline&steps=true`;
+            // Requesting alternatives=3
+            const url = `https://router.project-osrm.org/route/v1/bicycle/${coords}?overview=full&geometries=polyline&alternatives=3&steps=true`;
 
             try {
                 const res = await fetch(url);
                 const data = await res.json();
-                const route = data.routes[0];
-
-                if (routeLayer) map.removeLayer(routeLayer);
-                const points = decodePolyline(route.geometry);
-                routeLayer = L.polyline(points, {color: '#1a73e8', weight: 6, opacity: 0.8}).addTo(map);
-
-                // Update individual leg stats
-                route.legs.forEach((leg, i) => {
-                    const dist = (leg.distance / 1000).toFixed(2);
-                    const dur = Math.round(leg.duration / 60);
-                    document.getElementById(`stats-${i+1}`).innerHTML = `⬇️ ${dist} km | ~${dur} mins from previous stop`;
-                });
+                routeOptions = data.routes;
+                displayRoutes();
             } catch (err) { console.log("Routing error"); }
         }
 
-        function recenterMap() {
-            if (gpsPos) {
-                map.setView(gpsPos, 17);
-                window.speechSynthesis.speak(new SpeechSynthesisUtterance("Recentering"));
-            }
+        function displayRoutes() {
+            routeLayers.forEach(l => map.removeLayer(l));
+            routeLayers = [];
+            const altContainer = document.getElementById('alt-routes');
+            altContainer.innerHTML = '';
+
+            routeOptions.forEach((route, i) => {
+                const isActive = i === selectedRouteIndex;
+                const points = decodePolyline(route.geometry);
+                const layer = L.polyline(points, {
+                    color: isActive ? '#1a73e8' : '#999',
+                    weight: isActive ? 7 : 4,
+                    opacity: isActive ? 0.9 : 0.5,
+                    zIndex: isActive ? 1000 : 1
+                }).addTo(map);
+                
+                routeLayers.push(layer);
+
+                const card = document.createElement('div');
+                card.className = `alt-card ${isActive ? 'active' : ''}`;
+                card.innerHTML = `<strong>Option ${i+1}</strong><br>${(route.distance/1000).toFixed(1)}km | ${Math.round(route.duration/60)}m`;
+                card.onclick = () => { selectedRouteIndex = i; displayRoutes(); };
+                altContainer.appendChild(card);
+            });
+            document.getElementById('start-nav-btn').style.display = 'block';
         }
 
         function startNavigation() {
             isNavigating = true;
+            document.getElementById('nav-overlay').style.display = 'flex';
             document.getElementById('ui').style.display = 'none';
+            document.getElementById('nav-map-container').appendChild(document.getElementById('map'));
             map.setZoom(18);
-            window.speechSynthesis.speak(new SpeechSynthesisUtterance("Starting PCN navigation."));
+            speak("Navigation started. Follow the highlighted route.");
+        }
+
+        function stopNavigation() {
+            isNavigating = false;
+            document.getElementById('nav-overlay').style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+            document.body.appendChild(document.getElementById('map'));
+            map.setZoom(13);
+        }
+
+        function updateNavLogic(currentLatLng) {
+            const route = routeOptions[selectedRouteIndex];
+            if (!route || !route.legs[0].steps) return;
+
+            // Simplified maneuver logic: check distance to next step
+            const steps = route.legs[0].steps;
+            for(let i=0; i<steps.length; i++) {
+                const stepLoc = L.latLng(steps[i].maneuver.location[1], steps[i].maneuver.location[0]);
+                const dist = currentLatLng.distanceTo(stepLoc);
+                
+                if (dist < 30) {
+                    const instr = steps[i].maneuver.instruction || "Continue straight";
+                    const arrow = getArrow(steps[i].maneuver.type, steps[i].maneuver.modifier);
+                    document.getElementById('nav-instr').innerText = instr;
+                    document.getElementById('nav-arrow').innerText = arrow;
+                    if (window.lastPlayed !== instr) {
+                        speak(instr);
+                        window.lastPlayed = instr;
+                    }
+                    break;
+                }
+            }
+        }
+
+        function getArrow(type, modifier) {
+            if (modifier?.includes('left')) return '←';
+            if (modifier?.includes('right')) return '→';
+            if (type?.includes('arrive')) return '🏁';
+            return '↑';
+        }
+
+        function speak(text) {
+            const msg = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(msg);
         }
 
         function decodePolyline(str) {
@@ -232,6 +248,33 @@
                 coordinates.push([lat / 1e5, lng / 1e5]);
             }
             return coordinates;
+        }
+
+        function recenterMap() { if (gpsPos) map.panTo(gpsPos); }
+
+        async function searchAddress(index) {
+            const query = document.getElementById(`input-${index}`).value;
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}+singapore`);
+            const data = await res.json();
+            const list = document.getElementById('search-results');
+            list.innerHTML = ''; list.style.display = 'block';
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'res-item'; div.innerText = item.display_name;
+                div.onclick = () => {
+                    stops[index].marker.setLatLng([item.lat, item.lon]);
+                    document.getElementById(`input-${index}`).value = item.display_name;
+                    list.style.display = 'none'; calculateRoute();
+                };
+                list.appendChild(div);
+            });
+        }
+        
+        function setStopToGPS(index) {
+            if(gpsPos) {
+                stops[index].marker.setLatLng(gpsPos);
+                calculateRoute();
+            }
         }
     </script>
 </body>
